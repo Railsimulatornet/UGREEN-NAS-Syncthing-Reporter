@@ -1,0 +1,48 @@
+services:
+  syncthing:
+    image: syncthing/syncthing:latest
+    container_name: syncthing
+    hostname: syncthing
+    restart: unless-stopped
+    networks:
+      - stnet
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+    volumes:
+      - ./syncthing/config:/var/syncthing/config:rw
+      # Add your own Syncthing data volumes here, for example:
+      # - /your/data/path:/data:rw
+    ports:
+      - '8384:8384'        # GUI / API
+      - '22000:22000/tcp'  # sync TCP
+      - '22000:22000/udp'  # sync QUIC / UDP
+      - '21027:21027/udp'  # local discovery
+
+  syncthing_reporter_py:
+    image: syncthing_reporter_py:${REPORTER_BUILD_VERSION:-2026-03-17.1}
+    build:
+      context: ./syncthing_reporter_py
+      args:
+        REPORTER_BUILD_VERSION: ${REPORTER_BUILD_VERSION:-2026-03-17.1}
+    container_name: syncthing_reporter_py
+    hostname: syncthing_reporter_py
+    restart: unless-stopped
+    depends_on:
+      - syncthing
+    env_file:
+      - .env
+    user: "${PUID}:${PGID}"
+    environment:
+      TZ: ${TZ}
+      SYNCTHING_URL: ${SYNCTHING_URL:-http://syncthing:8384}
+    volumes:
+      - ./syncthing/config:/st-config:ro
+      - ./syncthing_reporter_py/state:/state
+    networks:
+      - stnet
+
+networks:
+  stnet:
+    driver: bridge

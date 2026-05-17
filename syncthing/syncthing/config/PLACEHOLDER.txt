@@ -1,0 +1,2 @@
+Place your Syncthing config.xml here if you want to mount a read-only config into the reporter.
+Otherwise, set SYNCTHING_URL and ST_API_KEY in .env to query your running Syncthing instance.

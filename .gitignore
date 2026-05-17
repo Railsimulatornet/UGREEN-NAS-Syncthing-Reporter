@@ -1,0 +1,14 @@
+# Local environment / secrets
+syncthing/.env
+
+# Runtime state
+syncthing/syncthing_reporter_py/state/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# OS / editor
+.DS_Store
+Thumbs.db
+release-notes*.txt

@@ -1,0 +1,32 @@
+# Runtime configuration and data
+syncthing/.env
+syncthing/.env.*
+!syncthing/.env.example
+syncthing/syncthing_reporter_py/state/
+syncthing/syncthing/config/config.xml
+syncthing/syncthing/config/cert.pem
+syncthing/syncthing/config/key.pem
+
+# Reports and caches
+**/state/
+**/attach/
+**/size_cache.json
+**/security/
+*.log
+*.tmp
+*.bak
+
+# Archives and generated packages
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+__pycache__/
+*.py[cod]

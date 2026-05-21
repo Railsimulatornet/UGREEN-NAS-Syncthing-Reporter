@@ -1,0 +1,133 @@
+name: Build and publish Syncthing Reporter image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+    paths:
+      - 'syncthing/syncthing_reporter_py/**'
+      - '.github/workflows/docker-publish.yml'
+  pull_request:
+    paths:
+      - 'syncthing/syncthing_reporter_py/**'
+      - '.github/workflows/docker-publish.yml'
+  schedule:
+    - cron: '30 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+  actions: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: railsimulatornet/ugreen-nas-syncthing-reporter
+
+jobs:
+  build-scan-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Prepare build metadata
+        id: buildmeta
+        shell: bash
+        run: |
+          echo "build_date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          echo "build_version=${GITHUB_REF_NAME}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build local image for security scan
+        run: |
+          docker build \
+            --pull \
+            --no-cache \
+            --build-arg REPORTER_BUILD_VERSION="${{ steps.buildmeta.outputs.build_version }}" \
+            --build-arg REPORTER_BUILD_DATE="${{ steps.buildmeta.outputs.build_date }}" \
+            -t syncthing-reporter:ci \
+            ./syncthing/syncthing_reporter_py
+
+      - name: Run Trivy scan
+        run: |
+          mkdir -p trivy-results
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/trivy-results:/out" \
+            aquasec/trivy:latest image \
+            --scanners vuln \
+            --ignore-unfixed \
+            --severity HIGH,CRITICAL \
+            --format json \
+            --output /out/syncthing_reporter_trivy.json \
+            syncthing-reporter:ci
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/trivy-results:/out" \
+            aquasec/trivy:latest image \
+            --scanners vuln \
+            --ignore-unfixed \
+            --severity HIGH,CRITICAL \
+            --format sarif \
+            --output /out/syncthing_reporter_trivy.sarif \
+            syncthing-reporter:ci
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/trivy-results:/out" \
+            aquasec/trivy:latest image \
+            --scanners vuln \
+            --ignore-unfixed \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --output /out/syncthing_reporter_trivy.txt \
+            syncthing-reporter:ci
+
+      - name: Upload Trivy SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-results/syncthing_reporter_trivy.sarif
+
+      - name: Upload Trivy reports as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: syncthing-reporter-trivy-results
+          path: trivy-results/
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=sha-
+
+      - name: Build and publish image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./syncthing/syncthing_reporter_py
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            REPORTER_BUILD_VERSION=${{ steps.buildmeta.outputs.build_version }}
+            REPORTER_BUILD_DATE=${{ steps.buildmeta.outputs.build_date }}

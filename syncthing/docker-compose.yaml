@@ -1,0 +1,66 @@
+services:
+  syncthing:
+    image: syncthing/syncthing:latest
+    container_name: Syncthing
+    restart: always
+    user: '${PUID}:${PGID}'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - stnet
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+    volumes:
+      - ./syncthing/config:/var/syncthing/config:rw
+
+      # Example folder mount / Beispiel-Ordnerfreigabe
+      # Add one line per Syncthing folder.
+      # Für jeden Syncthing-Ordner eine eigene Zeile ergänzen.
+      - /volume1/Public:/mnt/Public:rw
+
+      # Additional examples / Weitere Beispiele:
+      # - /volume1/Documents:/mnt/Documents:rw
+      # - /volume1/Media:/mnt/Media:rw
+    ports:
+      - '8384:8384'
+      - '22000:22000/tcp'
+      - '22000:22000/udp'
+      - '21027:21027/udp'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:8384/ > /dev/null || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  syncthing_reporter_py:
+    image: ${REPORTER_IMAGE:-ghcr.io/railsimulatornet/ugreen-nas-syncthing-reporter:latest}
+    container_name: syncthing_reporter_py
+    env_file:
+      - .env
+    restart: unless-stopped
+    user: '${PUID}:${PGID}'
+    depends_on:
+      - syncthing
+    networks:
+      - stnet
+    environment:
+      TZ: ${TZ}
+      SYNCTHING_URL: ${SYNCTHING_URL:-http://syncthing:8384}
+    volumes:
+      - ./syncthing/config:/st-config:ro
+      - ./syncthing_reporter_py/state:/state
+    healthcheck:
+      test: ['CMD-SHELL', '[ -f /st-config/config.xml ] || exit 1']
+      interval: 1m
+      timeout: 5s
+      retries: 3
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+networks:
+  stnet:
+    driver: bridge

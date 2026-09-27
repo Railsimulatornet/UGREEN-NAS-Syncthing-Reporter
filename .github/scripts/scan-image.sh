@@ -31,7 +31,7 @@ trivy image --input /image --platform linux/amd64 \
 
 trivy convert --format sarif --severity HIGH,CRITICAL \
   --output /out/syncthing_reporter_trivy.sarif /out/syncthing_reporter_trivy.json
-trivy convert --format table --severity HIGH,CRITICAL \
+trivy convert --format table --scanners vuln --severity HIGH,CRITICAL \
   --output /out/syncthing_reporter_trivy_all.txt /out/syncthing_reporter_trivy.json
 
 # Reuse this run's database and image; do not hide status=fixed findings.

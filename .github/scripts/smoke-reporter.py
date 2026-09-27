@@ -12,6 +12,11 @@ for source in root.glob('*.py'):
 for name in ('entry.sh', 'scheduler.sh'):
     subprocess.run(['/bin/sh', '-n', str(root / name)], check=True)
 
+for name in ('pip', 'setuptools', 'wheel', 'msgpack'):
+    if importlib.util.find_spec(name) is not None:
+        raise AssertionError('Unnecessary build-time package remains: ' + name)
+print('Runtime image contains no pip/setuptools/wheel/msgpack tooling: OK')
+
 # Never use deployment credentials, state or remote APIs in this test.
 os.environ.update(STATE_DIR='/tmp/reporter-smoke', SMTP_HOST='', ST_API_KEY='',
                   APPRISE_ENABLED='0', TZ='Europe/Berlin')

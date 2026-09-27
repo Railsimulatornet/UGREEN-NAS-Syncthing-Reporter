@@ -2,16 +2,16 @@ name: Build and publish Syncthing Reporter image
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
     paths:
       - 'syncthing/syncthing_reporter_py/**'
+      - '.github/scripts/**'
       - '.github/workflows/docker-publish.yml'
   pull_request:
     paths:
       - 'syncthing/syncthing_reporter_py/**'
+      - '.github/scripts/**'
       - '.github/workflows/docker-publish.yml'
   schedule:
     - cron: '30 3 * * 1'
@@ -19,104 +19,172 @@ on:
 
 permissions:
   contents: read
-  packages: write
-  security-events: write
-  actions: read
+
+concurrency:
+  group: syncthing-reporter-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: railsimulatornet/ugreen-nas-syncthing-reporter
+  IMAGE: ghcr.io/railsimulatornet/ugreen-nas-syncthing-reporter
 
 jobs:
-  build-scan-publish:
+  build-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Test security gate failure handling
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n .github/scripts/scan-image.sh
+          python3 .github/scripts/test_scan_gate.py -v
 
       - name: Prepare build metadata
         id: buildmeta
         shell: bash
         run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/reporter-image"
           echo "build_date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
           echo "build_version=${GITHUB_REF_NAME}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build local image for security scan
-        run: |
-          docker build \
-            --pull \
-            --no-cache \
-            --build-arg REPORTER_BUILD_VERSION="${{ steps.buildmeta.outputs.build_version }}" \
-            --build-arg REPORTER_BUILD_DATE="${{ steps.buildmeta.outputs.build_date }}" \
-            -t syncthing-reporter:ci \
-            ./syncthing/syncthing_reporter_py
+      # One build: the same OCI artifact is tested, scanned and published.
+      # Keep the existing AMD64 target; do not silently change supported platforms.
+      - name: Build candidate archive
+        uses: docker/build-push-action@v7
+        with:
+          context: ./syncthing/syncthing_reporter_py
+          platforms: linux/amd64
+          pull: true
+          no-cache: true
+          push: false
+          tags: syncthing-reporter:ci
+          outputs: type=oci,dest=${{ runner.temp }}/reporter-image/image.tar
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+          build-args: |
+            REPORTER_BUILD_VERSION=${{ steps.buildmeta.outputs.build_version }}
+            REPORTER_BUILD_DATE=${{ steps.buildmeta.outputs.build_date }}
 
-      - name: Run Trivy scan
+      - name: Install image-copy tool on CI runner
+        shell: bash
         run: |
-          mkdir -p trivy-results
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$PWD/trivy-results:/out" \
-            aquasec/trivy:latest image \
-            --scanners vuln \
-            --ignore-unfixed \
-            --ignore-status fixed \
-            --severity HIGH,CRITICAL \
-            --format json \
-            --output /out/syncthing_reporter_trivy.json \
-            syncthing-reporter:ci
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$PWD/trivy-results:/out" \
-            aquasec/trivy:latest image \
-            --scanners vuln \
-            --ignore-unfixed \
-            --ignore-status fixed \
-            --severity HIGH,CRITICAL \
-            --format sarif \
-            --output /out/syncthing_reporter_trivy.sarif \
-            syncthing-reporter:ci
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$PWD/trivy-results:/out" \
-            aquasec/trivy:latest image \
-            --scanners vuln \
-            --ignore-unfixed \
-            --ignore-status fixed \
-            --severity HIGH,CRITICAL \
-            --format table \
-            --output /out/syncthing_reporter_trivy.txt \
-            syncthing-reporter:ci
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends skopeo
+
+      - name: Verify archive transport and load runtime candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          archive="$RUNNER_TEMP/reporter-image/image.tar"
+          skopeo copy --all --preserve-digests \
+            "oci-archive:$archive" "oci:$RUNNER_TEMP/reporter-layout"
+          skopeo inspect --raw "oci-archive:$archive" > "$RUNNER_TEMP/archive-manifest.json"
+          skopeo inspect --raw "oci:$RUNNER_TEMP/reporter-layout" > "$RUNNER_TEMP/layout-manifest.json"
+          cmp "$RUNNER_TEMP/archive-manifest.json" "$RUNNER_TEMP/layout-manifest.json"
+          skopeo --override-os linux --override-arch amd64 copy \
+            "oci-archive:$archive" docker-daemon:syncthing-reporter:ci
+          (cd "$RUNNER_TEMP/reporter-image" && sha256sum image.tar > image.sha256)
+
+      - name: Offline reporter compatibility checks
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for lang in de en; do
+            docker run --rm --network none --read-only \
+              --cap-drop ALL --security-opt no-new-privileges \
+              --tmpfs /tmp:rw,nosuid,nodev,size=32m \
+              -e "REPORT_LANG=$lang" \
+              --mount "type=bind,src=$PWD/.github/scripts/smoke-reporter.py,dst=/smoke.py,readonly" \
+              --entrypoint python syncthing-reporter:ci /smoke.py
+          done
+
+      - name: Select one Trivy build for this run
+        id: trivy
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker pull ghcr.io/aquasecurity/trivy:latest
+          image_id="$(docker image inspect ghcr.io/aquasecurity/trivy:latest --format '{{.Id}}')"
+          [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "image=$image_id" >> "$GITHUB_OUTPUT"
+
+      - name: Scan candidate and enforce security gate
+        shell: bash
+        env:
+          TRIVY_IMAGE: ${{ steps.trivy.outputs.image }}
+        run: |
+          bash .github/scripts/scan-image.sh \
+            "$RUNNER_TEMP/reporter-layout" "$PWD/trivy-results"
 
       - name: Upload Trivy SARIF to GitHub Security
+        if: ${{ always() && hashFiles('trivy-results/syncthing_reporter_trivy.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: github/codeql-action/upload-sarif@v4.38.1
-        if: always()
         with:
           sarif_file: trivy-results/syncthing_reporter_trivy.sarif
 
-      - name: Upload Trivy reports as artifact
+      - name: Upload Trivy reports
+        if: ${{ always() && hashFiles('trivy-results/**') != '' }}
         uses: actions/upload-artifact@v7
-        if: always()
         with:
           name: syncthing-reporter-trivy-results
           path: trivy-results/
+          retention-days: 30
 
-      - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v4.6.0
+      - name: Save verified image for publication
+        if: ${{ success() && github.event_name != 'pull_request' }}
+        uses: actions/upload-artifact@v7
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          name: verified-reporter-image
+          path: ${{ runner.temp }}/reporter-image/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+  publish:
+    needs: build-scan
+    if: ${{ github.repository == 'Railsimulatornet/UGREEN-NAS-Syncthing-Reporter' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: syncthing-reporter-registry-publication
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download verified image from this run
+        uses: actions/download-artifact@v7
+        with:
+          name: verified-reporter-image
+          path: ${{ runner.temp }}/reporter-image
+
+      - name: Install image-copy tool on CI runner
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends skopeo
 
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
@@ -124,13 +192,47 @@ jobs:
             type=semver,pattern={{major}}
             type=sha,prefix=sha-
 
-      - name: Build and publish image
-        uses: docker/build-push-action@v7
-        with:
-          context: ./syncthing/syncthing_reporter_py
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            REPORTER_BUILD_VERSION=${{ steps.buildmeta.outputs.build_version }}
-            REPORTER_BUILD_DATE=${{ steps.buildmeta.outputs.build_date }}
+      - name: Publish verified archive without rebuilding
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -Eeuo pipefail
+          cd "$RUNNER_TEMP/reporter-image"
+          sha256sum --check image.sha256
+          auth="$RUNNER_TEMP/reporter-registry-auth.json"
+          trap 'rm -f "$auth"' EXIT
+          printf '%s' "$GH_TOKEN" | skopeo login --authfile "$auth" \
+            --username "$REGISTRY_USER" --password-stdin ghcr.io
+          skopeo inspect --raw oci-archive:image.tar > expected-manifest.json
+          expected="$(skopeo manifest-digest expected-manifest.json)"
+          mapfile -t tags <<< "$IMAGE_TAGS"
+          [[ "${#tags[@]}" -gt 0 ]]
+
+          # Preflight every fixed version before changing ANY registry tag.
+          for tag in "${tags[@]}"; do
+            [[ "$tag" == "$IMAGE:"* ]]
+            suffix="${tag#"$IMAGE:"}"
+            [[ "$suffix" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ ]]
+            if [[ "$suffix" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$ ]]; then
+              if skopeo inspect --authfile "$auth" --raw "docker://$tag" \
+                > existing-manifest.json 2> inspect-error.txt; then
+                actual="$(skopeo manifest-digest existing-manifest.json)"
+                [[ "$actual" == "$expected" ]] || {
+                  echo "Refusing to overwrite published version: $tag" >&2
+                  exit 1
+                }
+              elif ! grep -Eqi 'manifest unknown|MANIFEST_UNKNOWN' inspect-error.txt; then
+                cat inspect-error.txt >&2
+                exit 1
+              fi
+            fi
+          done
+          for tag in "${tags[@]}"; do
+            skopeo copy --authfile "$auth" --all --preserve-digests \
+              --digestfile published.digest oci-archive:image.tar "docker://$tag"
+            [[ "$(cat published.digest)" == "$expected" ]]
+            printf '%s -> %s\n' "$tag" "$expected"
+          done

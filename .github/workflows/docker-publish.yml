@@ -6,11 +6,28 @@ on:
     tags: ['v*']
     paths:
       - 'syncthing/syncthing_reporter_py/**'
+      - 'syncthing/docker-compose*.yaml'
+      - 'syncthing/.env.example'
+      - 'syncthing/scripts/**'
+      - 'VERSION'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'LICENSE'
+      - 'Screens/**'
+      - 'UGREEN_Syncthing_Reporter_Handbuch_DE-EN.pdf'
+      - '.github/release-*'
       - '.github/scripts/**'
       - '.github/workflows/docker-publish.yml'
   pull_request:
     paths:
-      - 'syncthing/syncthing_reporter_py/**'
+      - 'syncthing/**'
+      - 'VERSION'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'LICENSE'
+      - 'Screens/**'
+      - 'UGREEN_Syncthing_Reporter_Handbuch_DE-EN.pdf'
+      - '.github/release-*'
       - '.github/scripts/**'
       - '.github/workflows/docker-publish.yml'
   schedule:
@@ -21,7 +38,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: syncthing-reporter-${{ github.ref }}
+  # Serialize the entire publication, including release creation. PRs stay independent.
+  group: syncthing-reporter-${{ github.event_name == 'pull_request' && github.ref || 'publication' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -34,34 +52,44 @@ jobs:
     permissions:
       contents: read
       security-events: write
+    outputs:
+      version: ${{ steps.buildmeta.outputs.version }}
+      release: ${{ steps.buildmeta.outputs.release }}
+      tags: ${{ steps.buildmeta.outputs.tags }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - name: Test security gate failure handling
+      - name: Test security gate and release metadata
         shell: bash
         run: |
           set -Eeuo pipefail
           bash -n .github/scripts/scan-image.sh
           bash -n .github/scripts/test-image-promotion.sh
+          bash -n .github/scripts/package-release.sh
           python3 .github/scripts/test_scan_gate.py -v
+          python3 .github/scripts/test_release_metadata.py -v
 
-      - name: Prepare build metadata
+      - name: Prepare readable build metadata
         id: buildmeta
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           mkdir -p "$RUNNER_TEMP/reporter-image"
-          echo "build_date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-          echo "build_version=${GITHUB_REF_NAME}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          python3 .github/scripts/release_metadata.py
+
+      - name: Prepare and validate release package
+        shell: bash
+        run: bash .github/scripts/package-release.sh "$RUNNER_TEMP/reporter-release"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      # One build: the same OCI artifact is tested, scanned and published.
-      # Keep the existing AMD64 target; do not silently change supported platforms.
+      # Build once; testing, scanning and publication use the same artifact.
       - name: Build candidate archive
         uses: docker/build-push-action@v7
         with:
@@ -77,6 +105,7 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
           build-args: |
+            REPORTER_VERSION=V${{ steps.buildmeta.outputs.version }}
             REPORTER_BUILD_VERSION=${{ steps.buildmeta.outputs.build_version }}
             REPORTER_BUILD_DATE=${{ steps.buildmeta.outputs.build_date }}
 
@@ -152,6 +181,15 @@ jobs:
           path: trivy-results/
           retention-days: 30
 
+      - name: Save validated release package
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: reporter-release-package
+          path: ${{ runner.temp }}/reporter-release/
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Save verified image for publication
         if: ${{ success() && github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@v7
@@ -167,9 +205,6 @@ jobs:
     if: ${{ github.repository == 'Railsimulatornet/UGREEN-NAS-Syncthing-Reporter' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    concurrency:
-      group: syncthing-reporter-registry-publication
-      cancel-in-progress: false
     permissions:
       contents: read
       packages: write
@@ -187,24 +222,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends skopeo
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.IMAGE }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha,prefix=sha-
-
       - name: Publish verified archive without rebuilding
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ github.actor }}
-          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_TAGS: ${{ needs.build-scan.outputs.tags }}
         run: |
           set -Eeuo pipefail
           cd "$RUNNER_TEMP/reporter-image"
@@ -218,7 +241,7 @@ jobs:
           mapfile -t tags <<< "$IMAGE_TAGS"
           [[ "${#tags[@]}" -gt 0 ]]
 
-          # Preflight every fixed version before changing ANY registry tag.
+          # Check every fixed version/build tag before changing ANY registry tag.
           for tag in "${tags[@]}"; do
             [[ "$tag" == "$IMAGE:"* ]]
             suffix="${tag#"$IMAGE:"}"
@@ -243,3 +266,36 @@ jobs:
             [[ "$(cat published.digest)" == "$expected" ]]
             printf '%s -> %s\n' "$tag" "$expected"
           done
+
+  release:
+    needs: [build-scan, publish]
+    if: ${{ needs.build-scan.outputs.release == 'true' && github.repository == 'Railsimulatornet/UGREEN-NAS-Syncthing-Reporter' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated release package from this run
+        uses: actions/download-artifact@v7
+        with:
+          name: reporter-release-package
+          path: ${{ runner.temp }}/reporter-release
+
+      - name: Create versioned GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build-scan.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          cd "$RUNNER_TEMP/reporter-release"
+          [[ "$(tr -d '\r\n' < version.txt)" == "$VERSION" ]]
+          sha256sum --check SHA256SUMS
+          title="$(cat release-title.txt)"
+          # No clobber/delete: published releases and their files remain unchanged.
+          # The tag targets the exact commit used for the verified image and ZIP.
+          gh release create "v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "$title" --notes-file release-notes.md \
+            "syncthing-reporter-DE_EN_v${VERSION}.zip" \
+            UGREEN_Syncthing_Reporter_Handbuch_DE-EN.pdf SHA256SUMS

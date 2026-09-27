@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.2.2 - 2026-09-27
+
+### Deutsch
+
+- Nicht benötigte Installationswerkzeuge aus dem Reporter-Image entfernt.
+- Automatische Sicherheitsprüfung vor der Veröffentlichung verbessert.
+- Verständliche Versions- und Buildbezeichnungen für neue Images ergänzt.
+- ZIP-Paket und DE/EN-Handbuch werden bei neuen Versionen automatisch veröffentlicht.
+- Berichte, Zeitplanung und Einstellungen bleiben unverändert.
+
+### English
+
+- Removed unneeded installation tools from the reporter image.
+- Improved the automatic security check before publication.
+- Added readable version and build tags for new images.
+- New versions automatically publish the ZIP package and DE/EN handbook.
+- Reports, scheduling and settings remain unchanged.
+
 ## v2.2 - 2026-05-21
 
 ### Deutsch

@@ -45,6 +45,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           bash -n .github/scripts/scan-image.sh
+          bash -n .github/scripts/test-image-promotion.sh
           python3 .github/scripts/test_scan_gate.py -v
 
       - name: Prepare build metadata
@@ -130,6 +131,12 @@ jobs:
         run: |
           bash .github/scripts/scan-image.sh \
             "$RUNNER_TEMP/reporter-layout" "$PWD/trivy-results"
+
+      - name: Verify image publication using a disposable local registry
+        shell: bash
+        run: |
+          bash .github/scripts/test-image-promotion.sh \
+            "$RUNNER_TEMP/reporter-image/image.tar"
 
       - name: Upload Trivy SARIF to GitHub Security
         if: ${{ always() && hashFiles('trivy-results/syncthing_reporter_trivy.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}

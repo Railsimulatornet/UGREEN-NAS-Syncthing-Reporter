@@ -29,10 +29,15 @@ RUN set -eux; \
 WORKDIR /app
 
 COPY requirements.txt /app/
+# Install and validate runtime dependencies, then remove build-only tooling.
+# Updating global packages does not update pip's private vendored libraries.
 RUN set -eux; \
-    python -m pip install --upgrade pip setuptools wheel; \
+    python -m pip install --upgrade pip; \
     python -m pip install -r /app/requirements.txt; \
-    python -m pip install --upgrade "setuptools>=78.1.1" "msgpack>=1.2.1"
+    python -m pip check; \
+    python -m pip uninstall --yes setuptools wheel msgpack; \
+    python -m pip uninstall --yes pip; \
+    python -c 'import requests; print("Runtime requests:", requests.__version__)'
 
 COPY report.py /app/report.py
 COPY entry.sh /app/entry.sh

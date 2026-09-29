@@ -1,5 +1,8 @@
 # UGREEN NAS Syncthing Reporter
 
+[![Docker Image + Security](https://github.com/Railsimulatornet/UGREEN-NAS-Syncthing-Reporter/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/Railsimulatornet/UGREEN-NAS-Syncthing-Reporter/actions/workflows/docker-publish.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ![SyncthingReporter](Screens/SyncthingReporter.png)
 
 Der UGREEN NAS Syncthing Reporter ist ein leichtgewichtiges Docker-Paket für Syncthing. Es erstellt täglich einen HTML-Bericht und kann diesen per SMTP oder Apprise versenden.

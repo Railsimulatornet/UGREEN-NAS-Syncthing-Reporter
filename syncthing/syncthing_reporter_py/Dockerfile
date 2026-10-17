@@ -10,7 +10,7 @@ LABEL org.opencontainers.image.title="UGREEN NAS Syncthing Reporter" \
       org.opencontainers.image.description="Bilingual Syncthing HTML report for UGREEN NAS / Docker" \
       org.opencontainers.image.authors="Roman Glos" \
       org.opencontainers.image.source="https://github.com/Railsimulatornet/UGREEN-NAS-Syncthing-Reporter" \
-      org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
+      org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

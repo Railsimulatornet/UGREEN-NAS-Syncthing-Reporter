@@ -1,13 +1,28 @@
 #!/bin/sh
 set -eu
 
-PROJECT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+PROJECT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 SERVICE_NAME="syncthing_reporter_py"
-IMAGE_NAME="syncthing_reporter_py"
-NEW_VERSION="${1:-2.2.0}"
+RELEASE_VERSION="$(tr -d '\r\n' < "$PROJECT_DIR/../VERSION")"
+NEW_VERSION="${1:-$RELEASE_VERSION}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.local-build.yaml}"
+
+case "$NEW_VERSION" in
+  ''|[.-]*|*[!a-zA-Z0-9_.-]*)
+    echo "ERROR: Build version must be a valid Docker image tag." >&2
+    exit 1
+    ;;
+esac
+if [ "${#NEW_VERSION}" -gt 128 ]; then
+  echo "ERROR: Build version must not exceed 128 characters." >&2
+  exit 1
+fi
+
+export REPORTER_VERSION="V$RELEASE_VERSION"
+export REPORTER_BUILD_VERSION="$NEW_VERSION"
+export REPORTER_BUILD_DATE="${REPORTER_BUILD_DATE:-$(date -u +%Y-%m-%d)}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker command not found."
@@ -28,19 +43,11 @@ echo "[info] Compose file: $COMPOSE_FILE"
 echo "[info] Service: $SERVICE_NAME"
 echo "[info] New reporter build version: $NEW_VERSION"
 
-echo "[step] Stopping reporter service if it is running..."
-$COMPOSE -f "$COMPOSE_FILE" stop "$SERVICE_NAME" >/dev/null 2>&1 || true
-
-echo "[step] Removing old local reporter images..."
-docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}'       | awk -v img="$IMAGE_NAME" '$1 ~ "^" img ":" {print $2}'       | sort -u       | while read -r image_id; do
-      [ -n "$image_id" ] && docker rmi -f "$image_id" >/dev/null 2>&1 || true
-    done
-
 echo "[step] Rebuilding reporter image with current base image..."
-REPORTER_BUILD_VERSION="$NEW_VERSION"     REPORTER_VERSION="V2.2"     REPORTER_BUILD_DATE="2026-05-21"     $COMPOSE -f "$COMPOSE_FILE" build --pull --no-cache "$SERVICE_NAME"
+$COMPOSE -f "$COMPOSE_FILE" build --pull --no-cache "$SERVICE_NAME"
 
-echo "[step] Starting reporter service..."
-REPORTER_BUILD_VERSION="$NEW_VERSION"     REPORTER_VERSION="V2.2"     REPORTER_BUILD_DATE="2026-05-21"     $COMPOSE -f "$COMPOSE_FILE" up -d --force-recreate "$SERVICE_NAME"
+echo "[step] Recreating reporter service with the successful build..."
+$COMPOSE -f "$COMPOSE_FILE" up -d --no-deps --force-recreate "$SERVICE_NAME"
 
 echo "[step] Reporter container status:"
 $COMPOSE -f "$COMPOSE_FILE" ps "$SERVICE_NAME" || true

@@ -71,6 +71,7 @@ jobs:
           bash -n .github/scripts/package-release.sh
           python3 .github/scripts/test_scan_gate.py -v
           python3 .github/scripts/test_release_metadata.py -v
+          python3 .github/scripts/test_local_rebuild.py -v
 
       - name: Prepare readable build metadata
         id: buildmeta

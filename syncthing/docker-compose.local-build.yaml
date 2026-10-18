@@ -37,13 +37,13 @@ services:
       - com.centurylinklabs.watchtower.enable=true
 
   syncthing_reporter_py:
-    image: syncthing_reporter_py:${REPORTER_BUILD_VERSION:-2.2.2}
+    image: syncthing_reporter_py:${REPORTER_BUILD_VERSION:-2.2.3}
     build:
       context: ./syncthing_reporter_py
       args:
-        REPORTER_VERSION: ${REPORTER_VERSION:-V2.2.2}
-        REPORTER_BUILD_VERSION: ${REPORTER_BUILD_VERSION:-2.2.2}
-        REPORTER_BUILD_DATE: ${REPORTER_BUILD_DATE:-2026-09-27}
+        REPORTER_VERSION: ${REPORTER_VERSION:-V2.2.3}
+        REPORTER_BUILD_VERSION: ${REPORTER_BUILD_VERSION:-2.2.3}
+        REPORTER_BUILD_DATE: ${REPORTER_BUILD_DATE:-2026-10-18}
     container_name: syncthing_reporter_py
     env_file:
       - .env

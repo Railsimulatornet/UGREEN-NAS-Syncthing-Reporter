@@ -5,7 +5,16 @@ PROJECT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 SERVICE_NAME="syncthing_reporter_py"
-RELEASE_VERSION="$(tr -d '\r\n' < "$PROJECT_DIR/../VERSION")"
+if [ -f "$PROJECT_DIR/../VERSION" ]; then
+  RELEASE_VERSION="$(tr -d '\r\n' < "$PROJECT_DIR/../VERSION")"
+else
+  # The documented NAS installation copies only the syncthing directory.
+  RELEASE_VERSION="$(sed -n 's/^ARG REPORTER_VERSION=V//p' "$PROJECT_DIR/syncthing_reporter_py/Dockerfile" | tr -d '\r')"
+fi
+if ! printf '%s\n' "$RELEASE_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  echo "ERROR: Reporter release version was not found or is invalid." >&2
+  exit 1
+fi
 NEW_VERSION="${1:-$RELEASE_VERSION}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.local-build.yaml}"
 

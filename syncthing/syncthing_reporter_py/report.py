@@ -2,7 +2,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-syncthing_reporter_py — V2.2 | Build 2026-05-21 | Copyright Roman Glos 2026
+syncthing_reporter_py — V2.2.3 | Build 2026-10-18 | Copyright Roman Glos 2026
 - DE/EN in one script via REPORT_LANG=de|en
 - Shows failed folder items from /rest/folder/errors
 - Fixes missing HTML output for collected API/status errors
@@ -25,8 +25,8 @@ REPORT_LANG = os.getenv("REPORT_LANG", "de").strip().lower()
 if REPORT_LANG not in ("de", "en"):
     REPORT_LANG = "de"
 REPORT_TITLE_PREFIX = os.getenv("REPORT_TITLE_PREFIX", "").strip()
-REPORTER_VERSION = os.getenv("REPORTER_VERSION", "V2.2").strip() or "V2.2"
-REPORTER_BUILD_DATE = os.getenv("REPORTER_BUILD_DATE", "2026-05-21").strip() or "2026-05-21"
+REPORTER_VERSION = os.getenv("REPORTER_VERSION", "V2.2.3").strip() or "V2.2.3"
+REPORTER_BUILD_DATE = os.getenv("REPORTER_BUILD_DATE", "2026-10-18").strip() or "2026-10-18"
 REPORTER_COPYRIGHT = "Roman Glos 2026"
 STATE_DIR = pathlib.Path(os.getenv("STATE_DIR", "/state"))
 ATTACH_DIR = STATE_DIR / "attach"

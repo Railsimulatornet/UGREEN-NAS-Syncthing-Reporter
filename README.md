@@ -1,6 +1,7 @@
 # UGREEN NAS Syncthing Reporter
 
 [![Docker Image + Security](https://github.com/Railsimulatornet/UGREEN-NAS-Syncthing-Reporter/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/Railsimulatornet/UGREEN-NAS-Syncthing-Reporter/actions/workflows/docker-publish.yml)
+[![CodeQL](https://github.com/Railsimulatornet/UGREEN-NAS-Syncthing-Reporter/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/Railsimulatornet/UGREEN-NAS-Syncthing-Reporter/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ![SyncthingReporter](Screens/SyncthingReporter.png)
@@ -38,9 +39,9 @@ Der Image-Pfad bleibt unverändert. Neue Images erhalten folgende Tags:
 
 | Tag | Bedeutung |
 | --- | --- |
-| `2.2.2` | Feste Release-Version; wird nicht durch spätere Wartungsbuilds überschrieben. |
+| `2.2.3` | Feste Release-Version; wird nicht durch spätere Wartungsbuilds überschrieben. |
 | `latest` | Aktueller geprüfter Build für bestehende Installationen. |
-| `2.2.2-build.20260927.26.1` | Beispiel eines Wartungsbuilds: Version, Datum, Buildnummer und Wiederholungsnummer. |
+| `2.2.3-build.20261018.26.1` | Beispiel eines Wartungsbuilds: Version, Datum, Buildnummer und Wiederholungsnummer. |
 
 Die Kurzformen `2.2` und `2` folgen neuen Releases ihrer Versionsreihe. Wöchentliche Rebuilds erhalten eine eigene Buildbezeichnung und aktualisieren `latest`, aber keine festen Release-Tags. Der genaue Quellstand bleibt im Image-Metadatum `org.opencontainers.image.revision` nachvollziehbar. Bestehende `sha-…`-Tags bleiben erhalten; neue werden nicht mehr erzeugt.
 
@@ -123,7 +124,7 @@ Alternativ:
 ```bash
 cd syncthing
 chmod +x scripts/rebuild_reporter_local.sh
-./scripts/rebuild_reporter_local.sh 2.2.2
+./scripts/rebuild_reporter_local.sh 2.2.3
 ```
 
 ## Security-Scan des Reporter-Images
@@ -152,9 +153,9 @@ Das ausführliche Handbuch liegt als PDF im Repository: `UGREEN_Syncthing_Report
 
 ## Version
 
-- Reporter-Version: V2.2.2
+- Reporter-Version: V2.2.3
 - Docker-Image: `ghcr.io/railsimulatornet/ugreen-nas-syncthing-reporter:latest`
-- Build-Stand im Paket: 2026-09-27
+- Build-Stand im Paket: 2026-10-18
 
 ## English note
 
@@ -162,4 +163,4 @@ This project is licensed under the **MIT License**.
 
 This repository contains a bilingual German and English Syncthing reporting package for Docker. The runtime language can be switched with `REPORT_LANG=de` or `REPORT_LANG=en`.
 
-The image path and `latest` tag remain unchanged. Full release tags such as `2.2.2` are fixed. Weekly rebuilds receive readable tags such as `2.2.2-build.20260927.26.1` and update `latest` without overwriting release versions. Existing SHA-based tags are retained.
+The image path and `latest` tag remain unchanged. Full release tags such as `2.2.3` are fixed. Weekly rebuilds receive readable tags such as `2.2.3-build.20261018.26.1` and update `latest` without overwriting release versions. Existing SHA-based tags are retained.

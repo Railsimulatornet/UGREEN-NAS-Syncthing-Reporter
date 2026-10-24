@@ -170,7 +170,7 @@ jobs:
 
       - name: Upload Trivy SARIF to GitHub Security
         if: ${{ always() && hashFiles('trivy-results/syncthing_reporter_trivy.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: github/codeql-action/upload-sarif@v4.38.3
+        uses: github/codeql-action/upload-sarif@v4.39.1
         with:
           sarif_file: trivy-results/syncthing_reporter_trivy.sarif
 

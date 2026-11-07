@@ -72,6 +72,7 @@ jobs:
           python3 .github/scripts/test_scan_gate.py -v
           python3 .github/scripts/test_release_metadata.py -v
           python3 .github/scripts/test_local_rebuild.py -v
+          python3 .github/scripts/test_scan_identity.py -v
 
       - name: Prepare readable build metadata
         id: buildmeta
@@ -170,7 +171,7 @@ jobs:
 
       - name: Upload Trivy SARIF to GitHub Security
         if: ${{ always() && hashFiles('trivy-results/syncthing_reporter_trivy.sarif') != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: github/codeql-action/upload-sarif@v4.39.1
+        uses: github/codeql-action/upload-sarif@v4.39.3
         with:
           sarif_file: trivy-results/syncthing_reporter_trivy.sarif
 
@@ -201,8 +202,30 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-  publish:
+  # Preserve the existing code-scanning identity with this run's genuine report.
+  # No alerts/history are deleted and no second image is built or scanned.
+  build-scan-publish:
+    name: Trivy compatibility report
     needs: build-scan
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Download this run's Trivy report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: syncthing-reporter-trivy-results
+          path: trivy-results
+      - name: Retain scan identity
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-results/syncthing_reporter_trivy.sarif
+
+  publish:
+    needs: [build-scan, build-scan-publish]
     if: ${{ github.repository == 'Railsimulatornet/UGREEN-NAS-Syncthing-Reporter' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -269,7 +292,7 @@ jobs:
           done
 
   release:
-    needs: [build-scan, publish]
+    needs: [build-scan, build-scan-publish, publish]
     if: ${{ needs.build-scan.outputs.release == 'true' && github.repository == 'Railsimulatornet/UGREEN-NAS-Syncthing-Reporter' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10

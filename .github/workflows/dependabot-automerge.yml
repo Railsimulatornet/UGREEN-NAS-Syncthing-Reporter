@@ -34,15 +34,16 @@ concurrency:
 
 jobs:
   test:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
     steps:
-      - name: Checkout PR for read-only tests
+      - name: Checkout source for read-only tests
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
           persist-credentials: false
       - name: Run regression tests
         run: python3 -m unittest discover -s .github/scripts -p 'test_dependabot_automerge.py' -v

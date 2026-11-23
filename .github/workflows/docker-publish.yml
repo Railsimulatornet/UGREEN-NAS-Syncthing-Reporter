@@ -175,14 +175,17 @@ jobs:
             -keyout "$certs/server.key" -out "$certs/server.crt" >/dev/null 2>&1
           # Match the owner of the 0700 fixture directory/0600 key. Keep all
           # capabilities dropped; container root must not bypass host permissions.
+          # smtplib resolves its own hostname after connecting. Keep that lookup
+          # on loopback so the fixture never waits for DNS in --network none.
           docker run --rm --network none --read-only \
+            --hostname localhost \
             --user "$(id -u):$(id -g)" \
             --cap-drop ALL --security-opt no-new-privileges \
             --tmpfs /tmp:rw,nosuid,nodev,size=64m \
             --mount "type=bind,src=$PWD/.github/scripts/integration-reporter.py,dst=/integration.py,readonly" \
             --mount "type=bind,src=$certs,dst=/test-certs,readonly" \
             --entrypoint python syncthing-reporter:ci \
-            /integration.py --app-root /app --cert-dir /test-certs
+            /integration.py --app-root /app --cert-dir /test-certs --require-local-hostname
 
       - name: Select one Trivy build for this run
         id: trivy

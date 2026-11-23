@@ -47,10 +47,21 @@ class ScanIdentityTests(unittest.TestCase):
     def test_target_event_tests_only_trusted_base(self):
         target = job(self.gate, 'test')
         self.assertIn("github.event_name == 'pull_request_target'", target)
-        self.assertIn('github.event.pull_request.base.sha', target)
-        self.assertNotIn('github.event.pull_request.head.sha', target)
+        self.assertIn('ref: ${{ github.event.pull_request.base.sha }}', target)
         self.assertIn('contents: read', target)
         self.assertNotIn('contents: write', target)
+        self.assertNotIn('github.event.pull_request.head', self.gate)
+        self.assertNotRegex(self.gate, re.compile(r'^  pull_request:', re.M))
+
+    def test_candidate_code_is_isolated_from_privileged_events(self):
+        workflow = (ROOT / '.github/workflows/dependabot-gate-tests.yml').read_text()
+        self.assertRegex(workflow, re.compile(r'^  pull_request:', re.M))
+        self.assertIn('ref: ${{ github.event.pull_request.head.sha }}', workflow)
+        self.assertIn('contents: read', workflow)
+        self.assertIn('persist-credentials: false', workflow)
+        for forbidden in ('pull_request_target:', 'workflow_run:', 'schedule:',
+                          'workflow_dispatch:', ': write', 'secrets.', 'cache@'):
+            self.assertNotIn(forbidden, workflow)
 
 
 if __name__ == '__main__':

@@ -1,12 +1,7 @@
-# Only the read-only test job checks out PR code. Privileged jobs use trusted main.
+# Every job in this workflow uses trusted base/main code only.
 name: Dependabot patch auto-merge
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/dependabot-automerge.yml'
-      - '.github/scripts/dependabot_automerge.py'
-      - '.github/scripts/test_dependabot_automerge.py'
   pull_request_target:
     types: [opened, reopened, synchronize]
   workflow_run:
@@ -34,16 +29,16 @@ concurrency:
 
 jobs:
   test:
-    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
+    if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
     steps:
-      - name: Checkout source for read-only tests
+      - name: Checkout trusted base for read-only tests
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
+          ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
       - name: Run regression tests
         run: python3 -m unittest discover -s .github/scripts -p 'test_dependabot_automerge.py' -v

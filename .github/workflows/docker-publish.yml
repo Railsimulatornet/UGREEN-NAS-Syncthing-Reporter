@@ -44,6 +44,8 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/railsimulatornet/ugreen-nas-syncthing-reporter
+  SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  SOURCE_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.ref }}
 
 jobs:
   build-scan:
@@ -61,9 +63,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           # Publication uses the complete push before..after diff, including merges.
           fetch-depth: 0
+
+      - name: Verify checked-out source revision
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          actual="$(git rev-parse HEAD)"
+          [[ "$actual" == "$SOURCE_SHA" ]]
+          printf 'Verified source revision: %s\n' "$actual"
 
       - name: Test security gate and release metadata
         shell: bash
@@ -76,6 +88,7 @@ jobs:
           python3 .github/scripts/test_release_metadata.py -v
           python3 .github/scripts/test_local_rebuild.py -v
           python3 .github/scripts/test_scan_identity.py -v
+          python3 .github/scripts/test_source_identity.py -v
 
       - name: Prepare readable build metadata
         id: buildmeta
@@ -108,7 +121,7 @@ jobs:
           provenance: mode=max
           sbom: true
           labels: |
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
           build-args: |
             REPORTER_VERSION=V${{ steps.buildmeta.outputs.version }}
             REPORTER_BUILD_VERSION=${{ steps.buildmeta.outputs.build_version }}
@@ -133,6 +146,8 @@ jobs:
           cmp "$RUNNER_TEMP/archive-manifest.json" "$RUNNER_TEMP/layout-manifest.json"
           skopeo --override-os linux --override-arch amd64 copy \
             "oci-archive:$archive" docker-daemon:syncthing-reporter:ci
+          revision="$(docker image inspect syncthing-reporter:ci --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          [[ "$revision" == "$SOURCE_SHA" ]]
           (cd "$RUNNER_TEMP/reporter-image" && sha256sum image.tar > image.sha256)
 
       - name: Offline reporter compatibility checks
@@ -195,6 +210,8 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4.39.3
         with:
           sarif_file: trivy-results/syncthing_reporter_trivy.sarif
+          sha: ${{ env.SOURCE_SHA }}
+          ref: ${{ env.SOURCE_REF }}
 
       - name: Upload Trivy reports
         if: ${{ always() && hashFiles('trivy-results/**') != '' }}
@@ -244,6 +261,8 @@ jobs:
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: trivy-results/syncthing_reporter_trivy.sarif
+          sha: ${{ env.SOURCE_SHA }}
+          ref: ${{ env.SOURCE_REF }}
 
   publish:
     needs: [build-scan, build-scan-publish]

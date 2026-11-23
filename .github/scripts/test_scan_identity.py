@@ -48,7 +48,7 @@ class ScanIdentityTests(unittest.TestCase):
         target = job(self.gate, 'test')
         self.assertIn("github.event_name == 'pull_request_target'", target)
         self.assertIn('github.event.pull_request.base.sha', target)
-        self.assertNotIn('github.event.pull_request.head.sha', target)
+        self.assertIn("github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.event.pull_request.head.sha || github.sha", target)
         self.assertIn('contents: read', target)
         self.assertNotIn('contents: write', target)
 

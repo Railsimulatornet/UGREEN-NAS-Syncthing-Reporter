@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import socket
 import socketserver
 import ssl
 import subprocess
@@ -258,6 +259,10 @@ class ReporterIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("Traceback", result.stderr)
         self.assertIn("[apprise] Apprise disabled", result.stdout)
+        if "[smtp] SMTP OK" not in result.stdout:
+            # Preserve server-side evidence when a client fails before AUTH/TLS.
+            print(f"SMTP fixture diagnostics: mode={smtp.mode}, "
+                  f"commands={smtp.commands}, errors={smtp.errors}", flush=True)
         return result.stdout
 
     def assert_report(self, smtp, language):
@@ -344,9 +349,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app-root", type=Path, default=APP_ROOT)
     parser.add_argument("--cert-dir", type=Path, required=True)
+    parser.add_argument("--require-local-hostname", action="store_true")
     args, remaining = parser.parse_known_args()
     APP_ROOT, CERT_DIR = args.app_root.resolve(), args.cert_dir.resolve()
     if not (APP_ROOT / "report.py").is_file():
         parser.error("--app-root must contain report.py")
+    if args.require_local_hostname:
+        if socket.gethostname() != "localhost" or socket.gethostbyname("localhost") != "127.0.0.1":
+            parser.error("Isolated SMTP tests require --hostname localhost and loopback resolution")
+        print(f"SMTP fixture hostname resolves locally: {socket.getfqdn()}", flush=True)
     print(f"Reporter integration runtime: {sys.version}", flush=True)
     unittest.main(argv=[sys.argv[0], *remaining], verbosity=2)

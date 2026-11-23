@@ -145,6 +145,24 @@ jobs:
               --entrypoint python syncthing-reporter:ci /smoke.py
           done
 
+      - name: Test complete reporter with isolated HTTP and SMTP services
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          certs="$(mktemp -d "$RUNNER_TEMP/reporter-test-tls.XXXXXX")"
+          trap 'rm -rf "$certs"' EXIT
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=IP:127.0.0.1,DNS:localhost' \
+            -keyout "$certs/server.key" -out "$certs/server.crt" >/dev/null 2>&1
+          docker run --rm --network none --read-only \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+            --mount "type=bind,src=$PWD/.github/scripts/integration-reporter.py,dst=/integration.py,readonly" \
+            --mount "type=bind,src=$certs,dst=/test-certs,readonly" \
+            --entrypoint python syncthing-reporter:ci \
+            /integration.py --app-root /app --cert-dir /test-certs
+
       - name: Select one Trivy build for this run
         id: trivy
         shell: bash

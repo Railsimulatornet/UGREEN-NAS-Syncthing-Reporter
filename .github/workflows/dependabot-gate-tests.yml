@@ -1,0 +1,30 @@
+name: Dependabot gate regression tests
+
+# Candidate code is executed only in an unprivileged PR workflow, never in the
+# pull_request_target/workflow_run/scheduled workflow that can merge changes.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/dependabot-automerge.yml'
+      - '.github/workflows/dependabot-gate-tests.yml'
+      - '.github/scripts/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-gate-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact candidate for read-only tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Run regression tests
+        run: python3 -m unittest discover -s .github/scripts -p 'test_dependabot_automerge.py' -v

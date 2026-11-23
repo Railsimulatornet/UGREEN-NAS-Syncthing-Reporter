@@ -10,6 +10,7 @@ from contextlib import contextmanager
 import datetime as dt
 from email import policy
 from email.parser import BytesParser
+import fcntl
 import html
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -212,13 +213,23 @@ class ReporterIntegrationTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.state = self.root / "state"
-        self.config = self.root / "config.xml"
-        self.config.write_text(
+        # The real reporter opens this XML twice. An inherited, sealed memory
+        # descriptor supports both reads without persisting fixture credentials.
+        self.config_fd = os.memfd_create("reporter-fixture-config",
+                                        os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+        self.addCleanup(os.close, self.config_fd)
+        self.config = f"/proc/self/fd/{self.config_fd}"
+        configuration = (
             f'<configuration><gui><apikey>{API_KEY}</apikey></gui>'
             f'<folder id="fixture" label="{html.escape(LABEL, quote=True)}" '
             'path="/unused/fixture"/>'
             '<folder id="unavailable" label="Unavailable fixture" '
-            'path="/unused/unavailable"/></configuration>', encoding="utf-8")
+            'path="/unused/unavailable"/></configuration>').encode("utf-8")
+        self.assertEqual(os.write(self.config_fd, configuration), len(configuration))
+        os.lseek(self.config_fd, 0, os.SEEK_SET)
+        fcntl.fcntl(self.config_fd, fcntl.F_ADD_SEALS,
+                    fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK |
+                    fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE)
         self.api = ThreadingHTTPServer(("127.0.0.1", 0), SyncthingHandler)
         self.api.requests = []
         self.api.event_action = "update"
@@ -243,7 +254,7 @@ class ReporterIntegrationTests(unittest.TestCase):
             env["SSL_CERT_FILE"] = str(CERT_DIR / "server.crt")
         result = subprocess.run([sys.executable, str(APP_ROOT / "report.py")],
                                 env=env, cwd=self.root, capture_output=True,
-                                text=True, timeout=20)
+                                pass_fds=(self.config_fd,), text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn("Traceback", result.stderr)
         self.assertIn("[apprise] Apprise disabled", result.stdout)

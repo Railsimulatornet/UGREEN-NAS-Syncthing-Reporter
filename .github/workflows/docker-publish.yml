@@ -173,7 +173,10 @@ jobs:
             -subj '/CN=localhost' \
             -addext 'subjectAltName=IP:127.0.0.1,DNS:localhost' \
             -keyout "$certs/server.key" -out "$certs/server.crt" >/dev/null 2>&1
+          # Match the owner of the 0700 fixture directory/0600 key. Keep all
+          # capabilities dropped; container root must not bypass host permissions.
           docker run --rm --network none --read-only \
+            --user "$(id -u):$(id -g)" \
             --cap-drop ALL --security-opt no-new-privileges \
             --tmpfs /tmp:rw,nosuid,nodev,size=64m \
             --mount "type=bind,src=$PWD/.github/scripts/integration-reporter.py,dst=/integration.py,readonly" \

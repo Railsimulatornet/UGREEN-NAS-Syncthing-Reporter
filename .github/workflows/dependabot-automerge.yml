@@ -41,7 +41,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
       - name: Run regression tests
-        run: python3 -m unittest discover -s .github/scripts -p 'test_dependabot_automerge.py' -v
+        run: python3 -m unittest discover -s .github/scripts -p 'test_dependabot_automerge*.py' -v
 
   classify:
     if: >-
@@ -106,7 +106,7 @@ jobs:
           ref: main
           persist-credentials: false
       - name: Verify current gate code before privileged operation
-        run: python3 -m unittest discover -s .github/scripts -p 'test_dependabot_automerge.py' -v
+        run: python3 -m unittest discover -s .github/scripts -p 'test_dependabot_automerge*.py' -v
       - name: Check patch PRs, required checks, and versions before merge
         shell: bash
         env:

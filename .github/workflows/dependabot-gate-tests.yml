@@ -27,4 +27,4 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Run regression tests
-        run: python3 -m unittest discover -s .github/scripts -p 'test_dependabot_automerge.py' -v
+        run: python3 -m unittest discover -s .github/scripts -p 'test_dependabot_automerge*.py' -v

@@ -33,6 +33,11 @@ on:
   schedule:
     - cron: '30 3 * * 1'
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Require this exact commit for an automated post-merge check
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -60,6 +65,17 @@ jobs:
       release: ${{ steps.buildmeta.outputs.release }}
       tags: ${{ steps.buildmeta.outputs.tags }}
     steps:
+      - name: Verify requested source commit
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -n "$EXPECTED_SHA" ]]; then
+            [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ ]]
+            [[ "$GITHUB_SHA" == "$EXPECTED_SHA" ]]
+          fi
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
@@ -369,3 +385,4 @@ jobs:
             --title "$title" --notes-file release-notes.md \
             "syncthing-reporter-DE_EN_v${VERSION}.zip" \
             UGREEN_Syncthing_Reporter_Handbuch_DE-EN.pdf SHA256SUMS
+
